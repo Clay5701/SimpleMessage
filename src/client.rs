@@ -5,6 +5,7 @@ mod utils;
 use utils::format_message;
 
 use crossterm::event::{Event, KeyCode, read};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -21,6 +22,9 @@ fn main() -> std::io::Result<()> {
     io::stdout().flush()?;
     io::stdin().read_line(&mut username)?;
     let username = username.trim().to_string();
+
+    // Enable raw mode for the terminal (Fixes double key input issue)
+    enable_raw_mode()?;
 
     // Create a channel for sending messages to the UI thread
     let (tx, rx) = mpsc::channel::<String>(); // Multiple Producer, Single Consumer
@@ -71,6 +75,8 @@ fn main() -> std::io::Result<()> {
             }
         }
     }
+
+    disable_raw_mode()?;
 
     Ok(())
 }
