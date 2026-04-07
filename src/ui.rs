@@ -39,12 +39,12 @@ impl UI {
         // Draw messages
         for (i, message) in self.messages[start..].iter().enumerate() {
             execute!(stdout, MoveTo(0, i as u16)).unwrap();
-            println!("{}", message);
+            write!(stdout, "{}\r\n", message).unwrap();
         }
 
         // Move cursor to the bottom
         execute!(stdout, MoveTo(0, rows as u16 - 1)).unwrap();
-        print!("> {}", input);
+        write!(stdout, "> {}", input).unwrap();
 
         stdout.flush().unwrap();
     }
