@@ -35,14 +35,17 @@ fn main() -> std::io::Result<()> {
     // Create the UI and input buffer
     let mut ui = UI::new();
     let mut input = String::new();
+    ui.render(&input, true);
     loop {
+        let mut message_flag = false;
         // Receive any messages from the server and add them to the UI
         while let Ok(message) = rx.try_recv() {
             ui.add_message(message);
+            message_flag = true;
         }
 
         // Render the UI and input buffer
-        ui.render(&input);
+        ui.render(&input, message_flag);
 
         // Read a key event from the user
         if let Event::Key(event) = read().unwrap() {
@@ -61,10 +64,6 @@ fn main() -> std::io::Result<()> {
                         let formatted_line = format_message(&username, &input);
                         stream.write_all(formatted_line.as_bytes())?;
                         stream.write_all(b"\n")?;
-                        input.clear();
-
-                        ui.add_message(formatted_line);
-
                         input.clear();
                     }
                 }

@@ -44,11 +44,9 @@ fn handle_client(stream: TcpStream, clients: Arc<Mutex<Vec<TcpStream>>>) {
                 // Remove clients that fail to send the message
                 while i < client_guard.len() {
                     let client = &mut client_guard[i];
-                    if client.peer_addr().unwrap() != my_addr {
-                        if client.write_all(line.as_bytes()).is_err() {
-                            client_guard.remove(i);
-                            continue;
-                        }
+                    if client.write_all(line.as_bytes()).is_err() {
+                        client_guard.remove(i);
+                        continue;
                     }
                     i += 1;
                 }

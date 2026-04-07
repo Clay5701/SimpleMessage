@@ -1,6 +1,7 @@
 use crossterm::{
     cursor::MoveTo,
     execute,
+    style::Print,
     terminal::{Clear, ClearType, size},
 };
 use std::io::{Write, stdout};
@@ -24,28 +25,37 @@ impl UI {
     }
 
     // Render the UI, displaying messages and input
-    pub fn render(&self, input: &str) {
+    pub fn render(&self, input: &str, new_message: bool) {
         let mut stdout = stdout();
-
-        let (_, rows) = size().unwrap();
+        let (cols, rows) = size().unwrap();
         let max_messages = rows as usize - 1;
 
-        // Clear the screen
-        execute!(stdout, Clear(ClearType::All)).unwrap();
+        if new_message {
+            // Clear the screen
+            execute!(stdout, Clear(ClearType::All)).unwrap();
 
-        // Determine which messages to display
-        let start = self.messages.len().saturating_sub(max_messages);
+            // Determine which messages to display
+            let start = self.messages.len().saturating_sub(max_messages);
 
-        // Draw messages
-        for (i, message) in self.messages[start..].iter().enumerate() {
-            execute!(stdout, MoveTo(0, i as u16)).unwrap();
-            write!(stdout, "{}\r\n", message).unwrap();
+            // Draw messages
+            for (i, message) in self.messages[start..].iter().enumerate() {
+                execute!(stdout, MoveTo(0, i as u16)).unwrap();
+                write!(stdout, "{}\r\n", message).unwrap();
+            }
+
+            stdout.flush().unwrap();
         }
 
-        // Move cursor to the bottom
-        execute!(stdout, MoveTo(0, rows as u16 - 1)).unwrap();
-        write!(stdout, "> {}", input).unwrap();
+        let prompt = format!("> {}", input);
 
+        // Draw prompt and input all in one go to avoid cursor position issues and prevent flickering
+        execute!(
+            stdout,
+            MoveTo(0, rows as u16 - 1),
+            Print(format!("{:<width$}", prompt, width = cols as usize - 1)),
+            MoveTo(prompt.len() as u16, rows as u16 - 1)
+        )
+        .unwrap();
         stdout.flush().unwrap();
     }
 }
