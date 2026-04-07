@@ -12,3 +12,4 @@ name = "client"
 path = "src/client.rs"
 
 [dependencies]
+crossterm = "0.29.0"

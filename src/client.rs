@@ -1,8 +1,14 @@
+mod ui;
+use ui::UI;
+
 mod utils;
 use utils::format_message;
 
+use crossterm::event::{Event, KeyCode, read};
+
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
+use std::sync::mpsc;
 use std::thread;
 
 // Main Entry Point
@@ -16,27 +22,61 @@ fn main() -> std::io::Result<()> {
     io::stdin().read_line(&mut username)?;
     let username = username.trim().to_string();
 
+    // Create a channel for sending messages to the UI thread
+    let (tx, rx) = mpsc::channel::<String>(); // Multiple Producer, Single Consumer
+
     let read_stream = stream.try_clone()?; // Clone the stream for reading
 
     // Spawn a thread to read messages from the server
     thread::spawn(move || {
-        read_messages(read_stream);
+        read_messages(read_stream, tx);
     });
 
-    // Read messages from the user and send them to the server
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line?;
-        let formatted_line = format_message(&username, &line);
-        stream.write_all(formatted_line.as_bytes())?;
-        stream.write_all(b"\n")?;
+    // Create the UI and input buffer
+    let mut ui = UI::new();
+    let mut input = String::new();
+
+    loop {
+        // Receive any messages from the server and add them to the UI
+        while let Ok(message) = rx.try_recv() {
+            ui.add_message(message);
+        }
+
+        // Render the UI and input buffer
+        ui.render(&input);
+
+        // Read a key event from the user
+        if let Event::Key(event) = read().unwrap() {
+            match event.code {
+                KeyCode::Char(c) => {
+                    input.push(c);
+                }
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Enter => {
+                    if !input.is_empty() {
+                        let formatted_line = format_message(&username, &input);
+                        stream.write_all(formatted_line.as_bytes())?;
+                        stream.write_all(b"\n")?;
+                        input.clear();
+
+                        ui.add_message(formatted_line);
+
+                        input.clear();
+                    }
+                }
+                KeyCode::Esc => break,
+                _ => {}
+            }
+        }
     }
 
     Ok(())
 }
 
 // Read messages from the server and print them
-fn read_messages(read_stream: TcpStream) {
+fn read_messages(read_stream: TcpStream, tx: mpsc::Sender<String>) {
     let mut reader = BufReader::new(read_stream);
     let mut line = String::new();
 
@@ -44,7 +84,9 @@ fn read_messages(read_stream: TcpStream) {
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) => break,
-            Ok(_) => println!("{}", line.trim()),
+            Ok(_) => {
+                let _ = tx.send(line.trim().to_string());
+            }
             Err(e) => {
                 println!("Error: {}", e);
                 break;
