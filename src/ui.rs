@@ -31,7 +31,7 @@ impl UI {
         let max_messages = rows as usize - 1;
 
         // Clear the screen
-        execute!(stdout, Clear(ClearType::ALL)).unwrap();
+        execute!(stdout, Clear(ClearType::All)).unwrap();
 
         // Determine which messages to display
         let start = self.messages.len().saturating_sub(max_messages);
