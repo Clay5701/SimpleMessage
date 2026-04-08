@@ -16,6 +16,10 @@ fn main() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:7878")?; // Connect to the server
     println!("Connected to server");
 
+    // Prompt the user for the room ID and send it to the server
+    let room_id: String = room_input()?;
+    send_line(&mut stream, &room_id)?;
+
     let username: String = username_input()?;
 
     // Create a channel for sending messages to the UI thread
@@ -57,9 +61,7 @@ fn main() -> std::io::Result<()> {
                 }
                 KeyCode::Enter => {
                     if !input.is_empty() {
-                        let formatted_line = format_message(&username, &input);
-                        stream.write_all(formatted_line.as_bytes())?;
-                        stream.write_all(b"\n")?;
+                        send_line(&mut stream, &format_message(&username, &input))?;
                         input.clear();
                     }
                 }
@@ -78,6 +80,33 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+// Send a string to the server
+fn send_line(stream: &mut TcpStream, line: &str) -> Result<(), io::Error> {
+    stream.write_all(line.as_bytes())?;
+    stream.write_all(b"\n")?;
+    Ok(())
+}
+
+// Prompt the user for the room ID and return it
+fn room_input() -> Result<String, io::Error> {
+    loop {
+        let mut input = String::new();
+
+        print!("Enter a six-digit room ID: ");
+        io::stdout().flush()?;
+        std::io::stdin().read_line(&mut input).ok();
+
+        let room_id = input.trim();
+
+        // Validate the room ID (must be 6 digits)
+        if room_id.len() == 6 && room_id.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(room_id.to_string());
+        } else {
+            println!("Invalid room ID. Please enter a six-digit number.");
+        }
+    }
 }
 
 // Prompt the user for their username and return it
