@@ -1,3 +1,4 @@
+// server.rs
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -40,7 +41,7 @@ fn handle_client(stream: TcpStream, clients: Arc<Mutex<Vec<TcpStream>>>) {
                 let mut client_guard = clients.lock().unwrap();
                 let mut i = 0;
 
-                // Broadcast the message to all connected clients, except the sender
+                // Broadcast the message to all connected clients
                 // Remove clients that fail to send the message
                 while i < client_guard.len() {
                     let client = &mut client_guard[i];

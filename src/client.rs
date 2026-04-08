@@ -1,3 +1,4 @@
+// client.rs
 mod ui;
 use ui::UI;
 
@@ -5,7 +6,6 @@ mod utils;
 use utils::format_message;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, read};
-
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::sync::mpsc;
@@ -16,14 +16,10 @@ fn main() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:7878")?; // Connect to the server
     println!("Connected to server");
 
-    let mut username = String::new();
-    print!("Enter your username: ");
-    io::stdout().flush()?;
-    io::stdin().read_line(&mut username)?;
-    let username = username.trim().to_string();
+    let username: String = username_input()?;
 
     // Create a channel for sending messages to the UI thread
-    let (tx, rx) = mpsc::channel::<String>(); // Multiple Producer, Single Consumer
+    let (tx, rx) = mpsc::channel::<String>(); // Multiple Producers, Single Consumer
 
     let read_stream = stream.try_clone()?; // Clone the stream for reading
 
@@ -67,6 +63,14 @@ fn main() -> std::io::Result<()> {
                         input.clear();
                     }
                 }
+                KeyCode::Up => {
+                    ui.increase_start_offset();
+                    ui.render(&input, true);
+                }
+                KeyCode::Down => {
+                    ui.decrease_start_offset();
+                    ui.render(&input, true);
+                }
                 KeyCode::Esc => break,
                 _ => {}
             }
@@ -74,6 +78,17 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+// Prompt the user for their username and return it
+fn username_input() -> Result<String, io::Error> {
+    let mut input = String::new();
+
+    print!("Enter your username: ");
+    io::stdout().flush()?;
+    std::io::stdin().read_line(&mut input).ok();
+
+    Ok(input.trim().to_string())
 }
 
 // Read messages from the server and print them
@@ -86,7 +101,7 @@ fn read_messages(read_stream: TcpStream, tx: mpsc::Sender<String>) {
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {
-                let _ = tx.send(line.trim().to_string());
+                let _ = tx.send(line.trim().to_string()); // Send the line to the UI thread
             }
             Err(e) => {
                 println!("Error: {}", e);
