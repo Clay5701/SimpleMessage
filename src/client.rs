@@ -1,9 +1,7 @@
 // client.rs
-mod ui;
-use ui::UI;
-
-mod utils;
-use utils::format_message;
+use SimpleMessage::commands::{Command, CommandTarget, execute_client_command, parse_command};
+use SimpleMessage::ui::{ScreenState, UI};
+use SimpleMessage::utils::format_message;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, read};
 use std::io::{self, BufRead, BufReader, Write};
@@ -17,8 +15,8 @@ fn main() -> std::io::Result<()> {
     println!("Connected to server");
 
     // Prompt the user for the room ID and send it to the server
-    let room_id: String = room_input()?;
-    send_line(&mut stream, &room_id)?;
+    // let room_id: String = room_input()?;
+    // send_line(&mut stream, &room_id)?;
 
     let username: String = username_input()?;
 
@@ -32,49 +30,94 @@ fn main() -> std::io::Result<()> {
         read_messages(read_stream, tx);
     });
 
-    // Create the UI and input buffer
+    // Create the UI
     let mut ui = UI::new();
     let mut input = String::new();
     ui.render(&input, true);
+
+    // Create variable to store the current screen state
     loop {
-        let mut message_flag = false;
-        // Receive any messages from the server and add them to the UI
-        while let Ok(message) = rx.try_recv() {
-            ui.add_message(message);
-            message_flag = true;
-        }
-
-        // Render the UI and input buffer
-        ui.render(&input, message_flag);
-
-        // Read a key event from the user
-        if let Event::Key(event) = read().unwrap() {
-            if event.kind != KeyEventKind::Press {
-                continue;
-            }
-            match event.code {
-                KeyCode::Char(c) => {
-                    input.push(c);
-                }
-                KeyCode::Backspace => {
-                    input.pop();
-                }
-                KeyCode::Enter => {
-                    if !input.is_empty() {
-                        send_line(&mut stream, &format_message(&username, &input))?;
-                        input.clear();
+        match ui.screen_state {
+            ScreenState::Home => {
+                ui.render_home(&input);
+                if let Ok(Event::Key(event)) = read() {
+                    if event.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    match event.code {
+                        KeyCode::Char(c) => {
+                            input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            input.pop();
+                        }
+                        KeyCode::Enter => {
+                            if !input.is_empty() {
+                                if input.starts_with('/') {
+                                    let command: Command = parse_command(&input);
+                                    match execute_client_command(command, &mut ui) {
+                                        CommandTarget::ClientHandled => {
+                                            input.clear();
+                                        }
+                                        CommandTarget::ServerHandled => {
+                                            send_line(&mut stream, &input)?;
+                                            ui.screen_state = ScreenState::Chat;
+                                            input.clear();
+                                        }
+                                    }
+                                }
+                                input.clear();
+                            }
+                        }
+                        _ => {}
                     }
                 }
-                KeyCode::Up => {
-                    ui.increase_start_offset();
-                    ui.render(&input, true);
+            }
+            ScreenState::Chat => {
+                let mut message_flag = false;
+                // Receive any messages from the server and add them to the UI
+                while let Ok(message) = rx.try_recv() {
+                    ui.add_message(message);
+                    message_flag = true;
                 }
-                KeyCode::Down => {
-                    ui.decrease_start_offset();
-                    ui.render(&input, true);
+
+                // Render the UI and input buffer
+                ui.render(&input, message_flag);
+
+                // Read a key event from the user
+                if let Ok(Event::Key(event)) = read() {
+                    if event.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    match event.code {
+                        KeyCode::Char(c) => {
+                            input.push(c);
+                        }
+                        KeyCode::Backspace => {
+                            input.pop();
+                        }
+                        KeyCode::Enter => {
+                            if !input.is_empty() {
+                                if input.starts_with('/') {
+                                    send_line(&mut stream, &input)?;
+                                } else {
+                                    send_line(&mut stream, &format_message(&username, &input))?;
+                                }
+                                input.clear();
+                            }
+                        }
+                        KeyCode::Up => {
+                            ui.increase_start_offset();
+                            ui.render(&input, true);
+                        }
+                        KeyCode::Down => {
+                            ui.decrease_start_offset();
+                            ui.render(&input, true);
+                        }
+                        KeyCode::Esc => break,
+                        _ => {}
+                    }
                 }
-                KeyCode::Esc => break,
-                _ => {}
             }
         }
     }
