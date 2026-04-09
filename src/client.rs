@@ -1,6 +1,6 @@
 // client.rs
-use SimpleMessage::commands::{Command, CommandTarget, execute_client_command, parse_command};
-use SimpleMessage::ui::{ScreenState, UI};
+use SimpleMessage::commands::{ClientAction, Command, execute_client_command, parse_command};
+use SimpleMessage::ui::{self, ScreenState, UI};
 use SimpleMessage::utils::format_message;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, read};
@@ -13,10 +13,6 @@ use std::thread;
 fn main() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:7878")?; // Connect to the server
     println!("Connected to server");
-
-    // Prompt the user for the room ID and send it to the server
-    // let room_id: String = room_input()?;
-    // send_line(&mut stream, &room_id)?;
 
     let username: String = username_input()?;
 
@@ -35,7 +31,6 @@ fn main() -> std::io::Result<()> {
     let mut input = String::new();
     ui.render(&input, true);
 
-    // Create variable to store the current screen state
     loop {
         match ui.screen_state {
             ScreenState::Home => {
@@ -54,17 +49,7 @@ fn main() -> std::io::Result<()> {
                         KeyCode::Enter => {
                             if !input.is_empty() {
                                 if input.starts_with('/') {
-                                    let command: Command = parse_command(&input);
-                                    match execute_client_command(command, &mut ui) {
-                                        CommandTarget::ClientHandled => {
-                                            input.clear();
-                                        }
-                                        CommandTarget::ServerHandled => {
-                                            send_line(&mut stream, &input)?;
-                                            ui.screen_state = ScreenState::Chat;
-                                            input.clear();
-                                        }
-                                    }
+                                    handle_commands(&mut stream, &mut ui, &mut input)?;
                                 }
                                 input.clear();
                             }
@@ -99,7 +84,7 @@ fn main() -> std::io::Result<()> {
                         KeyCode::Enter => {
                             if !input.is_empty() {
                                 if input.starts_with('/') {
-                                    send_line(&mut stream, &input)?;
+                                    handle_commands(&mut stream, &mut ui, &mut input)?;
                                 } else {
                                     send_line(&mut stream, &format_message(&username, &input))?;
                                 }
@@ -132,26 +117,6 @@ fn send_line(stream: &mut TcpStream, line: &str) -> Result<(), io::Error> {
     Ok(())
 }
 
-// Prompt the user for the room ID and return it
-fn room_input() -> Result<String, io::Error> {
-    loop {
-        let mut input = String::new();
-
-        print!("Enter a six-digit room ID: ");
-        io::stdout().flush()?;
-        std::io::stdin().read_line(&mut input).ok();
-
-        let room_id = input.trim();
-
-        // Validate the room ID (must be 6 digits)
-        if room_id.len() == 6 && room_id.chars().all(|c| c.is_ascii_digit()) {
-            return Ok(room_id.to_string());
-        } else {
-            println!("Invalid room ID. Please enter a six-digit number.");
-        }
-    }
-}
-
 // Prompt the user for their username and return it
 fn username_input() -> Result<String, io::Error> {
     let mut input = String::new();
@@ -161,6 +126,35 @@ fn username_input() -> Result<String, io::Error> {
     std::io::stdin().read_line(&mut input).ok();
 
     Ok(input.trim().to_string())
+}
+
+// Handle commands entered by the user (prefixed with '/')
+fn handle_commands(
+    stream: &mut TcpStream,
+    ui: &mut UI,
+    input: &mut String,
+) -> Result<(), io::Error> {
+    let command: Command = parse_command(&input); // Parse the command entered by the user
+
+    // Execute the command and handle the actions
+    for action in execute_client_command(command) {
+        match action {
+            ClientAction::Quit => {
+                std::process::exit(0);
+            }
+            ClientAction::ChangeScreen(state) => {
+                ui.screen_state = state;
+                input.clear();
+            }
+            ClientAction::Forward() => {
+                send_line(stream, &input)?;
+                ui.screen_state = ScreenState::Chat;
+                input.clear();
+            }
+        }
+    }
+
+    Ok(())
 }
 
 // Read messages from the server and print them

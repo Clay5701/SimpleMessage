@@ -1,5 +1,5 @@
 // server.rs
-use SimpleMessage::commands::{Command, CommandTarget, execute_client_command, parse_command};
+use SimpleMessage::commands::{Command, ServerAction, execute_server_command, parse_command};
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -7,6 +7,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+// Represents a client connected to the server
 struct Client {
     stream: TcpStream,
     addr: std::net::SocketAddr,
@@ -55,9 +56,9 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
         match reader.read_line(&mut line) {
             Ok(0) => break,
             Ok(_) => {
+                // Handle commands (e.g., /join, /leave)
                 if line.starts_with('/') {
-                    let command: Command = parse_command(&line);
-                    execute_server_command(&command, &mut client, &rooms);
+                    handle_commands(&mut client, &rooms, &line);
                     continue;
                 }
                 let mut clients = client.room.lock().unwrap();
@@ -82,27 +83,35 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
     }
 }
 
-fn execute_server_command(
-    command: &Command,
+// Handles commands sent by clients
+fn handle_commands(
     client: &mut Client,
     rooms: &Arc<Mutex<HashMap<String, Arc<Mutex<Vec<TcpStream>>>>>>,
+    line: &str,
 ) {
-    match command {
-        Command::Join(room_id) => {
-            client.room_id = room_id.clone();
-            client.room = {
-                let mut rooms_guard = rooms.lock().unwrap();
+    let command: Command = parse_command(line);
 
-                rooms_guard
-                    .entry(room_id.clone())
-                    .or_insert_with(|| Arc::new(Mutex::new(Vec::new())))
-                    .clone()
-            };
-            let stream_clone = client.stream.try_clone().unwrap();
-            client.room.lock().unwrap().push(stream_clone);
-            println!("Client {} joined room {}", client.addr, client.room_id);
+    for action in execute_server_command(command) {
+        match action {
+            ServerAction::Join(room_id) => {
+                if client.room_id == room_id {
+                    continue;
+                }
+                client.room_id = room_id.clone();
+                client.room = {
+                    let mut rooms_guard = rooms.lock().unwrap();
+
+                    rooms_guard
+                        .entry(room_id.clone())
+                        .or_insert_with(|| Arc::new(Mutex::new(Vec::new())))
+                        .clone()
+                };
+                let stream_clone = client.stream.try_clone().unwrap();
+                client.room.lock().unwrap().push(stream_clone);
+                println!("Client {} joined room {}", client.addr, client.room_id);
+            }
+            ServerAction::Disconnect => {}
+            _ => {}
         }
-        Command::Leave => {}
-        _ => {}
     }
 }

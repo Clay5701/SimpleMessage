@@ -29,6 +29,8 @@ impl UI {
         let (cols, rows) = size().unwrap();
 
         let mut stdout = stdout();
+
+        // Enter alternate screen (freeze screen in place)
         execute!(stdout, EnterAlternateScreen).unwrap();
 
         Self {
@@ -174,6 +176,7 @@ impl UI {
     }
 }
 
+// Leaves alternate screen when UI is dropped
 impl Drop for UI {
     fn drop(&mut self) {
         let mut stdout = stdout();
