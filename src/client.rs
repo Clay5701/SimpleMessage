@@ -33,6 +33,7 @@ fn main() -> std::io::Result<()> {
 
     loop {
         match ui.screen_state {
+            // Render the home/help screen and match key events when ui.screen_state is ScreenState::Home
             ScreenState::Home => {
                 ui.render_home(&input);
                 if let Ok(Event::Key(event)) = read() {
@@ -54,10 +55,17 @@ fn main() -> std::io::Result<()> {
                                 input.clear();
                             }
                         }
+                        KeyCode::Esc => {
+                            ui.screen_state = ScreenState::Chat;
+                            input.clear();
+                            ui.render(&input, true);
+                        }
                         _ => {}
                     }
                 }
             }
+
+            // Render the chat screen and match key events when ui.screen_state is ScreenState::Chat
             ScreenState::Chat => {
                 let mut message_flag = false;
                 // Receive any messages from the server and add them to the UI

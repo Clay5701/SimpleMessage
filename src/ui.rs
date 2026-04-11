@@ -53,6 +53,7 @@ impl UI {
         }
     }
 
+    // Render the home/help screen
     pub fn render_home(&mut self, input: &str) {
         self.update_dimensions();
         let mut stdout = stdout(); // Get a handle to the terminal stdout
@@ -97,6 +98,16 @@ impl UI {
             y += 1;
         }
 
+        // Exit message
+        y += 2;
+        let exit_message = "Press [Esc] to leave this page.";
+        execute!(
+            stdout,
+            MoveTo(center_x - (exit_message.len() as u16 / 2), y),
+            Print(exit_message)
+        )
+        .unwrap();
+
         self.draw_prompt(input);
     }
 
@@ -133,6 +144,7 @@ impl UI {
         self.draw_prompt(input);
     }
 
+    // Helper function to draw the prompt and input line at the bottom of the screen
     fn draw_prompt(&mut self, input: &str) {
         let prompt = format!("> {}", input);
         let mut stdout = stdout();

@@ -1,9 +1,6 @@
 // commands.rs
 use crate::ui::ScreenState;
 
-use std::io;
-use std::net::TcpStream;
-
 // Represents an action to be taken by the client
 pub enum ClientAction {
     ChangeScreen(ScreenState),

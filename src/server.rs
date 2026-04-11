@@ -11,8 +11,8 @@ use std::thread;
 struct Client {
     stream: TcpStream,
     addr: std::net::SocketAddr,
-    room_id: String,
-    room: Arc<Mutex<Vec<TcpStream>>>,
+    room_id: Option<String>,
+    room: Option<Arc<Mutex<Vec<TcpStream>>>>,
 }
 
 // Type alias for the rooms map
@@ -43,8 +43,8 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
     let mut client: Client = Client {
         stream: stream.try_clone().unwrap(),
         addr: stream.peer_addr().unwrap(),
-        room_id: String::new(),
-        room: Arc::new(Mutex::new(Vec::new())),
+        room_id: None,
+        room: None,
     };
 
     let mut reader = BufReader::new(stream);
@@ -61,18 +61,29 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
                     handle_commands(&mut client, &rooms, &line);
                     continue;
                 }
-                let mut clients = client.room.lock().unwrap();
-                let mut i = 0;
 
-                // Broadcast the message to all connected clients
-                // Remove clients that fail to send the message
-                while i < clients.len() {
-                    let client = &mut clients[i];
-                    if client.write_all(line.as_bytes()).is_err() {
-                        clients.remove(i);
-                        continue;
+                // Broadcast the message to all connected clients in the room
+                match &client.room {
+                    Some(room) => {
+                        let mut clients = room.lock().unwrap();
+                        let mut i = 0;
+
+                        // Broadcast the message to all connected clients
+                        // Remove clients that fail to send the message
+                        while i < clients.len() {
+                            let client = &mut clients[i];
+                            if client.write_all(line.as_bytes()).is_err() {
+                                clients.remove(i);
+                                continue;
+                            }
+                            i += 1;
+                        }
                     }
-                    i += 1;
+                    None => {
+                        let _ = client
+                            .stream
+                            .write_all(b"Join a room first with /join <room_id>\n");
+                    }
                 }
             }
             Err(e) => {
@@ -93,24 +104,48 @@ fn handle_commands(
 
     for action in execute_server_command(command) {
         match action {
+            // Join: set the client's room_id and room, and add the client's stream to the room
             ServerAction::Join(room_id) => {
-                if client.room_id == room_id {
+                // Using as_deref() to compare room_id with client.room_id as &str (string slice)
+                if client.room_id.as_deref() == Some(room_id.as_str()) {
                     continue;
                 }
-                client.room_id = room_id.clone();
-                client.room = {
+                client.room_id = Some(room_id.clone());
+                client.room = Some({
                     let mut rooms_guard = rooms.lock().unwrap();
 
                     rooms_guard
                         .entry(room_id.clone())
                         .or_insert_with(|| Arc::new(Mutex::new(Vec::new())))
                         .clone()
-                };
+                });
                 let stream_clone = client.stream.try_clone().unwrap();
-                client.room.lock().unwrap().push(stream_clone);
-                println!("Client {} joined room {}", client.addr, client.room_id);
+
+                if let Some(room) = &client.room {
+                    room.lock().unwrap().push(stream_clone);
+                }
+                println!("Client {} joined room {}", client.addr, room_id);
             }
-            ServerAction::Disconnect => {}
+
+            // Disconnect: remove the client from the room (if any) and reset room_id and room to None
+            // take() takes the room out of client.room, replacing it with None and returning it
+            ServerAction::Disconnect => match client.room.take() {
+                Some(room) => {
+                    let mut clients = room.lock().unwrap();
+                    let addr: std::net::SocketAddr = client.addr;
+
+                    clients.retain(|stream| match stream.peer_addr() {
+                        Ok(a) => a != addr,
+                        Err(_) => false,
+                    });
+
+                    client.room_id = None;
+                }
+                None => {
+                    // Client is not in any room, nothing to do
+                    // Send an error message to the client
+                }
+            },
             _ => {}
         }
     }
