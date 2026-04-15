@@ -14,7 +14,9 @@ fn main() -> std::io::Result<()> {
     let mut stream = TcpStream::connect("127.0.0.1:7878")?; // Connect to the server
     println!("Connected to server");
 
-    let username: String = username_input()?;
+    // Get the username from the user and send it to the server
+    let mut username: String = username_input()?;
+    forward_username(&mut stream, &username)?;
 
     // Create a channel for sending messages to the UI thread
     let (tx, rx) = mpsc::channel::<String>(); // Multiple Producers, Single Consumer
@@ -50,7 +52,12 @@ fn main() -> std::io::Result<()> {
                         KeyCode::Enter => {
                             if !input.is_empty() {
                                 if input.starts_with('/') {
-                                    handle_commands(&mut stream, &mut ui, &mut input)?;
+                                    handle_commands(
+                                        &mut stream,
+                                        &mut ui,
+                                        &mut input,
+                                        &mut username,
+                                    )?;
                                 }
                                 input.clear();
                             }
@@ -92,7 +99,12 @@ fn main() -> std::io::Result<()> {
                         KeyCode::Enter => {
                             if !input.is_empty() {
                                 if input.starts_with('/') {
-                                    handle_commands(&mut stream, &mut ui, &mut input)?;
+                                    handle_commands(
+                                        &mut stream,
+                                        &mut ui,
+                                        &mut input,
+                                        &mut username,
+                                    )?;
                                 } else {
                                     send_line(&mut stream, &format_message(&username, &input))?;
                                 }
@@ -136,11 +148,17 @@ fn username_input() -> Result<String, io::Error> {
     Ok(input.trim().to_string())
 }
 
+// Forward the username to the server
+fn forward_username(stream: &mut TcpStream, username: &str) -> Result<(), io::Error> {
+    send_line(stream, &format!("/set_username {}", username))
+}
+
 // Handle commands entered by the user (prefixed with '/')
 fn handle_commands(
     stream: &mut TcpStream,
     ui: &mut UI,
     input: &mut String,
+    username: &mut String,
 ) -> Result<(), io::Error> {
     let command: Command = parse_command(&input); // Parse the command entered by the user
 
@@ -152,15 +170,17 @@ fn handle_commands(
             }
             ClientAction::ChangeScreen(state) => {
                 ui.screen_state = state;
-                input.clear();
             }
-            ClientAction::Forward() => {
+            ClientAction::Forward => {
                 send_line(stream, &input)?;
                 ui.screen_state = ScreenState::Chat;
-                input.clear();
+            }
+            ClientAction::SetUsername(new_username) => {
+                *username = new_username;
             }
         }
     }
+    input.clear();
 
     Ok(())
 }

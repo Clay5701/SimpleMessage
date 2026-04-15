@@ -11,6 +11,7 @@ use std::thread;
 struct Client {
     stream: TcpStream,
     addr: std::net::SocketAddr,
+    username: Option<String>,
     room_id: Option<String>,
     room: Option<Arc<Mutex<Vec<TcpStream>>>>,
 }
@@ -43,6 +44,7 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
     let mut client: Client = Client {
         stream: stream.try_clone().unwrap(),
         addr: stream.peer_addr().unwrap(),
+        username: None,
         room_id: None,
         room: None,
     };
@@ -65,24 +67,11 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
                 // Broadcast the message to all connected clients in the room
                 match &client.room {
                     Some(room) => {
-                        let mut clients = room.lock().unwrap();
-                        let mut i = 0;
-
-                        // Broadcast the message to all connected clients
-                        // Remove clients that fail to send the message
-                        while i < clients.len() {
-                            let client = &mut clients[i];
-                            if client.write_all(line.as_bytes()).is_err() {
-                                clients.remove(i);
-                                continue;
-                            }
-                            i += 1;
-                        }
+                        broadcast_message(room, &line);
                     }
                     None => {
-                        let _ = client
-                            .stream
-                            .write_all(b"Join a room first with /join <room_id>\n");
+                        let message = "Join a room first with /join <room_id>\n";
+                        whisper(&mut client.stream, message);
                     }
                 }
             }
@@ -92,6 +81,28 @@ fn handle_client(stream: TcpStream, rooms: Rooms) {
             }
         }
     }
+}
+
+// Broadcast a message to all connected clients in a room
+fn broadcast_message(room: &Arc<Mutex<Vec<TcpStream>>>, message: &str) {
+    let mut clients = room.lock().unwrap();
+    let mut i = 0;
+
+    // Broadcast the message to all connected clients
+    // Remove clients that fail to send the message
+    while i < clients.len() {
+        let client = &mut clients[i];
+        if client.write_all(message.as_bytes()).is_err() {
+            clients.remove(i);
+            continue;
+        }
+        i += 1;
+    }
+}
+
+// Send a whisper message to a single client
+fn whisper(stream: &mut TcpStream, message: &str) {
+    let _ = stream.write_all(message.as_bytes());
 }
 
 // Handles commands sent by clients
@@ -123,6 +134,15 @@ fn handle_commands(
 
                 if let Some(room) = &client.room {
                     room.lock().unwrap().push(stream_clone);
+
+                    // Broadcast the join message to the room
+                    broadcast_message(
+                        &room,
+                        &format!(
+                            "{} has joined the chat\n",
+                            client.username.as_deref().unwrap_or("unknown")
+                        ),
+                    );
                 }
                 println!("Client {} joined room {}", client.addr, room_id);
             }
@@ -131,22 +151,51 @@ fn handle_commands(
             // take() takes the room out of client.room, replacing it with None and returning it
             ServerAction::Disconnect => match client.room.take() {
                 Some(room) => {
-                    let mut clients = room.lock().unwrap();
                     let addr: std::net::SocketAddr = client.addr;
 
-                    clients.retain(|stream| match stream.peer_addr() {
-                        Ok(a) => a != addr,
-                        Err(_) => false,
-                    });
+                    // Scope block to limit the lifetime of the lock (prevents deadlock when broadcasting leave message to the room)
+                    {
+                        let mut clients = room.lock().unwrap();
 
+                        clients.retain(|stream| match stream.peer_addr() {
+                            Ok(a) => a != addr,
+                            Err(_) => false,
+                        });
+                    }
+
+                    whisper(
+                        &mut client.stream,
+                        &format!(
+                            "You have left room {}\n",
+                            client.room_id.as_deref().unwrap_or("unknown")
+                        ),
+                    );
                     client.room_id = None;
+
+                    // Broadcast the leave message to the room
+                    broadcast_message(
+                        &room,
+                        &format!(
+                            "{} has left the chat\n",
+                            client.username.as_deref().unwrap_or("unknown")
+                        ),
+                    );
                 }
                 None => {
-                    // Client is not in any room, nothing to do
-                    // Send an error message to the client
+                    send_client_error(&mut client.stream, "You are not in a room.");
                 }
             },
+
+            // SetUsername: set the client's username
+            ServerAction::SetUsername(username) => {
+                client.username = Some(username);
+            }
             _ => {}
         }
     }
+}
+
+fn send_client_error(stream: &mut TcpStream, message: &str) {
+    let error_msg = format!("[Error] {}\n", message);
+    let _ = stream.write_all(error_msg.as_bytes());
 }

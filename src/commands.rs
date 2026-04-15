@@ -5,12 +5,14 @@ use crate::ui::ScreenState;
 pub enum ClientAction {
     ChangeScreen(ScreenState),
     Quit,
-    Forward(),
+    SetUsername(String),
+    Forward,
 }
 
 // Represents an action to be taken by the server
 pub enum ServerAction {
     Alert(String),
+    SetUsername(String),
     Join(String),
     Disconnect,
 }
@@ -21,6 +23,7 @@ pub enum Command {
     Leave,
     ListRooms,
     ListUsers,
+    SetUsername(String),
     Quit,
     Help,
     Unknown(String),
@@ -40,6 +43,7 @@ pub fn parse_command(input: &str) -> Command {
         ["/leave"] => Command::Leave,
         ["/rooms"] => Command::ListRooms,
         ["/users"] => Command::ListUsers,
+        ["/set_username", username] => Command::SetUsername(username.to_string()),
         ["/quit"] => Command::Quit,
         ["/help"] => Command::Help,
         _ => Command::Unknown(input.to_string()),
@@ -49,13 +53,22 @@ pub fn parse_command(input: &str) -> Command {
 // Executes a client command and returns a vector of ClientAction variants
 pub fn execute_client_command(command: Command) -> Vec<ClientAction> {
     match command {
+        Command::Join(_) => {
+            vec![
+                ClientAction::ChangeScreen(ScreenState::Chat),
+                ClientAction::Forward,
+            ]
+        }
         Command::Quit => {
             vec![ClientAction::Quit]
         }
         Command::Help => {
             vec![ClientAction::ChangeScreen(ScreenState::Home)]
         }
-        _ => vec![ClientAction::Forward()],
+        Command::SetUsername(username) => {
+            vec![ClientAction::SetUsername(username), ClientAction::Forward]
+        }
+        _ => vec![ClientAction::Forward],
     }
 }
 
@@ -69,6 +82,9 @@ pub fn execute_server_command(command: Command) -> Vec<ServerAction> {
         Command::Leave => {
             let alert: String = format!("You have successfully left the room.");
             vec![ServerAction::Disconnect, ServerAction::Alert(alert)]
+        }
+        Command::SetUsername(username) => {
+            vec![ServerAction::SetUsername(username)]
         }
         _ => vec![],
     }
